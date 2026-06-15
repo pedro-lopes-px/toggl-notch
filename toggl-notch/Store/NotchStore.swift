@@ -1,5 +1,4 @@
 import Foundation
-import Network
 import Observation
 
 /// Single source of truth for all UI state, routing, and Toggl data.
@@ -16,9 +15,14 @@ final class NotchStore {
     var routeDirection: RouteDirection = .push
 
     // Auth
-    var isAuthenticated: Bool { KeychainStore.readToken() != nil && workspaceRepo.user != nil }
+    /// Mirrors keychain token presence so SwiftUI can react when the token is cleared.
+    private(set) var hasStoredToken = KeychainStore.readToken() != nil
+    var isAuthenticated: Bool { hasStoredToken && workspaceRepo.user != nil }
+    var quotaResetAt: Date? { workspaceRepo.quotaResetAt }
+    var isQuotaLimited: Bool { workspaceRepo.isInQuotaCooldown }
     var isOnboarding: Bool {
-        guard KeychainStore.readToken() != nil else { return true }
+        guard hasStoredToken else { return true }
+        if isQuotaLimited { return false }
         if workspaceRepo.isLoading { return false }
         return workspaceRepo.user == nil
     }
@@ -33,7 +37,6 @@ final class NotchStore {
     var panelOpenTrigger: PanelOpenTrigger {
         didSet { UserDefaults.standard.set(panelOpenTrigger.rawValue, forKey: Self.panelOpenTriggerKey) }
     }
-
     /// Draft values for starting a timer from the home shell.
     var draftDescription = ""
     var draftProjectID: String?
@@ -50,8 +53,9 @@ final class NotchStore {
     let timeEntryRepo: TimeEntryRepo
 
     private let api: TogglAPIClient
-    private var pollTask: Task<Void, Never>?
-    private var pathMonitor: NWPathMonitor?
+    // Tasks are started/cancelled on the main actor; nonisolated(unsafe) allows cleanup in deinit.
+    nonisolated(unsafe) private var pollTask: Task<Void, Never>?
+    nonisolated(unsafe) private var quotaRetryTask: Task<Void, Never>?
     private var pendingMutations: [( () async throws -> Void)] = []
 
     /// Controller hooks (window plumbing only).
@@ -75,12 +79,17 @@ final class NotchStore {
         tagRepo = TagRepo(api: api)
         timeEntryRepo = TimeEntryRepo(api: api)
 
-        if useMockData || KeychainStore.readToken() == nil {
+        if useMockData || !hasStoredToken {
             seedMockData()
         }
 
-        startNetworkMonitor()
+        wireConnectivity()
         startPolling()
+    }
+
+    deinit {
+        pollTask?.cancel()
+        quotaRetryTask?.cancel()
     }
 
     enum RouteDirection { case push, pop }
@@ -159,9 +168,15 @@ final class NotchStore {
 
     // MARK: - Bootstrap
 
-    func bootstrap() async {
-        guard KeychainStore.readToken() != nil else { return }
+    @discardableResult
+    func bootstrap() async -> Bool {
+        guard hasStoredToken else { return false }
         await workspaceRepo.bootstrap()
+        if isQuotaLimited, let reset = quotaResetAt {
+            scheduleQuotaRetry(until: reset)
+            return false
+        }
+        guard workspaceRepo.user != nil else { return false }
         applyWorkspaceScope()
         let tagMap = tagRepo.tagNameToIDMap()
         await withTaskGroup(of: Void.self) { group in
@@ -171,16 +186,33 @@ final class NotchStore {
             group.addTask { await self.timeEntryRepo.refreshCurrentEntry(tagMap: self.tagRepo.tagNameToIDMap()) }
             group.addTask { await self.timeEntryRepo.refreshToday(force: true, tagMap: self.tagRepo.tagNameToIDMap()) }
         }
+        quotaRetryTask?.cancel()
+        return true
     }
 
     func connect(token: String) async throws {
-        try await workspaceRepo.validateToken(token)
-        try KeychainStore.saveToken(token)
-        await bootstrap()
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            try await workspaceRepo.validateToken(trimmed)
+        } catch {
+            if isQuotaLimited, let reset = quotaResetAt {
+                scheduleQuotaRetry(until: reset)
+            }
+            throw error
+        }
+        KeychainStore.saveToken(trimmed)
+        hasStoredToken = true
+        guard await bootstrap() else {
+            if isQuotaLimited, let reset = quotaResetAt {
+                throw TogglAPIError.quotaExceeded(resetsAt: reset)
+            }
+            throw TogglAPIError.unknown("Token saved, but couldn't load your account. Check your connection and try again.")
+        }
     }
 
     func disconnect() {
         KeychainStore.deleteToken()
+        hasStoredToken = false
         workspaceRepo.clear()
         seedMockData()
     }
@@ -229,6 +261,7 @@ final class NotchStore {
     }
 
     private func refreshOnExpand() async {
+        guard !isQuotaLimited else { return }
         await bootstrap()
     }
 
@@ -276,6 +309,24 @@ final class NotchStore {
         }
     }
 
+    private func wireConnectivity() {
+        Task {
+            await api.setConnectivityHandler { [weak self] isOnline in
+                Task { @MainActor [weak self] in
+                    self?.updateConnectivity(isOnline)
+                }
+            }
+        }
+    }
+
+    private func updateConnectivity(_ isOnline: Bool) {
+        let wasOffline = isOffline
+        isOffline = !isOnline
+        if wasOffline && isOnline {
+            Task { await flushPendingMutations() }
+        }
+    }
+
     // MARK: - Errors & offline
 
     func showError(_ message: String, retry: (() -> Void)? = nil) {
@@ -290,22 +341,6 @@ final class NotchStore {
 
     func dismissError() {
         errorToast = nil
-    }
-
-    private func startNetworkMonitor() {
-        let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] path in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                let wasOffline = isOffline
-                isOffline = path.status != .satisfied
-                if wasOffline && !isOffline {
-                    await flushPendingMutations()
-                }
-            }
-        }
-        monitor.start(queue: DispatchQueue(label: "com.togglnotch.network"))
-        pathMonitor = monitor
     }
 
     func enqueueMutation(_ operation: @escaping () async throws -> Void) {
@@ -361,8 +396,25 @@ final class NotchStore {
     }
 
     private func pollCurrentEntry() async {
-        guard isAuthenticated else { return }
+        guard isAuthenticated, !isQuotaLimited else { return }
         await timeEntryRepo.refreshCurrentEntry(tagMap: tagRepo.tagNameToIDMap())
+    }
+
+    private func scheduleQuotaRetry(until resetsAt: Date) {
+        quotaRetryTask?.cancel()
+        let delay = max(0, resetsAt.timeIntervalSinceNow)
+        quotaRetryTask = Task {
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+            }
+            guard !Task.isCancelled else { return }
+            await retryAfterQuotaReset()
+        }
+    }
+
+    private func retryAfterQuotaReset() async {
+        guard hasStoredToken, isQuotaLimited else { return }
+        _ = await bootstrap()
     }
 
     // MARK: - Mock fallback

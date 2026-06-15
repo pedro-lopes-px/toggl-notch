@@ -4,23 +4,24 @@ struct CalendarView: View {
     @Environment(NotchStore.self) private var store
     @State private var selectedDate = Date.now
 
-    private var dayEntries: [TimeEntry] {
-        store.timeEntryRepo.cachedEntries(on: selectedDate)
+    private var hasRunningEntry: Bool {
+        store.runningEntry != nil
+    }
+
+    private var showsRunningEntry: Bool {
+        guard let running = store.runningEntry else { return false }
+        return Calendar.current.isDate(running.startedAt, inSameDayAs: selectedDate)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            RouteHeader(title: "Calendar")
-
-            DayStrip(selectedDate: $selectedDate)
-                .padding(.top, 8)
-
-            SectionLabel(sectionTitle)
-                .padding(.horizontal, NotchMetrics.panelPadding)
-                .padding(.top, 8)
-
-            DayTimeline(date: selectedDate, entries: dayEntries)
-                .padding(.top, 4)
+        Group {
+            if hasRunningEntry {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    calendarContent(now: context.date)
+                }
+            } else {
+                calendarContent(now: .now)
+            }
         }
         .task(id: selectedDate) {
             _ = await store.timeEntryRepo.entries(for: selectedDate, tagMap: store.tagRepo.tagNameToIDMap())
@@ -28,10 +29,29 @@ struct CalendarView: View {
         }
     }
 
-    private var sectionTitle: String {
+    private func calendarContent(now: Date) -> some View {
+        let entries = store.timeEntryRepo.displayEntries(on: selectedDate, at: now)
+        let runningID = showsRunningEntry ? store.runningEntry?.id : nil
+
+        return VStack(alignment: .leading, spacing: 0) {
+            RouteHeader(title: "Calendar")
+
+            DayStrip(selectedDate: $selectedDate, now: now)
+                .padding(.top, 8)
+
+            SectionLabel(sectionTitle(now: now))
+                .padding(.horizontal, NotchMetrics.panelPadding)
+                .padding(.top, 8)
+
+            DayTimeline(date: selectedDate, entries: entries, runningEntryID: runningID, now: now)
+                .padding(.top, 4)
+        }
+    }
+
+    private func sectionTitle(now: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "EEEE · MMM d"
-        let hours = TimeFormatting.formatHours(store.timeEntryRepo.trackedSeconds(on: selectedDate))
+        let hours = TimeFormatting.formatHours(store.timeEntryRepo.trackedSeconds(on: selectedDate, at: now))
         return "\(f.string(from: selectedDate).uppercased()) · \(hours.uppercased())"
     }
 
@@ -39,6 +59,7 @@ struct CalendarView: View {
 
 struct DayStrip: View {
     @Binding var selectedDate: Date
+    var now: Date = .now
     @Environment(NotchStore.self) private var store
 
     @State private var weekOffset = 0
@@ -83,7 +104,7 @@ struct DayStrip: View {
         let isToday = Calendar.current.isDateInToday(day)
         let isFuture = day > Date.now
         let weekday = day.formatted(.dateTime.weekday(.abbreviated)).uppercased()
-        let hours = store.timeEntryRepo.trackedSeconds(on: day)
+        let hours = store.timeEntryRepo.trackedSeconds(on: day, at: now)
 
         return Button {
             guard !isFuture else { return }

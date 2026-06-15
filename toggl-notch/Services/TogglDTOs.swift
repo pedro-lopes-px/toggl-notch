@@ -2,12 +2,36 @@ import Foundation
 
 enum TogglAPIError: Error, Equatable, Sendable {
     case unauthenticated
+    /// Per-second burst throttle (HTTP 429).
     case rateLimited
+    /// Hourly plan quota (HTTP 402). `resetsAt` comes from `X-Toggl-Quota-Resets-In`.
+    case quotaExceeded(resetsAt: Date)
     case serverError(Int)
     case network
     case decoding
     case notFound
     case unknown(String)
+
+    var userMessage: String {
+        switch self {
+        case .unauthenticated:
+            "That token didn't work. Copy it from Toggl Profile → API Token."
+        case .network:
+            "No internet connection."
+        case .decoding:
+            "Got an unexpected response from Toggl. Try again."
+        case .rateLimited:
+            "Too many requests. Wait a moment and try again."
+        case .quotaExceeded:
+            "Hourly API limit reached. Your token is fine — wait for the reset."
+        case .serverError:
+            "Toggl is having issues. Try again."
+        case .notFound:
+            "That token didn't work."
+        case .unknown(let detail):
+            detail
+        }
+    }
 }
 
 // MARK: - DTOs
@@ -15,7 +39,7 @@ enum TogglAPIError: Error, Equatable, Sendable {
 nonisolated struct TogglMeDTO: Decodable, Sendable {
     let id: Int
     let email: String
-    let defaultWorkspaceID: Int
+    let defaultWorkspaceID: Int?
 
     enum CodingKeys: String, CodingKey {
         case id, email
@@ -223,7 +247,11 @@ nonisolated enum TogglJSONCoding {
 
 nonisolated enum TogglDTOMapper {
     static func user(from dto: TogglMeDTO) -> TogglUser {
-        TogglUser(id: dto.id, email: dto.email, defaultWorkspaceID: dto.defaultWorkspaceID)
+        TogglUser(
+            id: dto.id,
+            email: dto.email,
+            defaultWorkspaceID: dto.defaultWorkspaceID ?? 0
+        )
     }
 
     static func workspace(from dto: TogglWorkspaceDTO) -> Workspace {

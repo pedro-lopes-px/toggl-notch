@@ -19,9 +19,11 @@ struct TagsSettingsPane: View {
                 List {
                     ForEach(store.tagRepo.tags) { tag in
                         TagSettingsRow(tag: tag)
+                            .settingsListRowChrome()
                     }
                 }
-                .listStyle(.inset)
+                .listStyle(.plain)
+                .settingsPaneChrome()
             }
 
             createBar
@@ -39,8 +41,8 @@ struct TagsSettingsPane: View {
                 .pointerStyle(.link)
         }
         .padding(.horizontal, NotchMetrics.panelPadding)
-        .padding(.top, 4)
-        .padding(.bottom, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
     }
 
     @ViewBuilder
@@ -108,7 +110,7 @@ struct TagSettingsRow: View {
             .menuStyle(.borderlessButton)
             .frame(width: 24)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     private var usageLabel: String {

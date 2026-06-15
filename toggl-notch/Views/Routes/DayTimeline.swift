@@ -16,6 +16,8 @@ private enum TimelineMetrics {
 struct DayTimeline: View {
     let date: Date
     let entries: [TimeEntry]
+    var runningEntryID: String?
+    var now: Date = .now
 
     @State private var hourHeight = TimelineMetrics.defaultHourHeight
 
@@ -81,9 +83,11 @@ struct DayTimeline: View {
                 }
 
                 ForEach(placements, id: \.entry.id) { placement in
+                    let isRunning = placement.entry.id == runningEntryID
+                    let end = isRunning ? now : placement.entry.stoppedAt
                     let blockHeight = TimelineLayout.blockHeight(
                         start: placement.entry.startedAt,
-                        end: placement.entry.stoppedAt,
+                        end: end,
                         on: date,
                         hourHeight: hourHeight
                     )
@@ -97,7 +101,12 @@ struct DayTimeline: View {
                     let width = columnWidth - TimelineMetrics.blockInset * 2
 
                     if y < timelineHeight, blockHeight > 0 {
-                        TimelineEventBlock(entry: placement.entry, height: blockHeight)
+                        TimelineEventBlock(
+                            entry: placement.entry,
+                            height: blockHeight,
+                            isRunning: isRunning,
+                            now: now
+                        )
                             .frame(width: max(0, width), height: blockHeight, alignment: .topLeading)
                             .offset(x: x, y: y)
                     }
@@ -184,6 +193,8 @@ struct DayTimeline: View {
 private struct TimelineEventBlock: View {
     let entry: TimeEntry
     let height: CGFloat
+    var isRunning: Bool = false
+    var now: Date = .now
 
     @Environment(NotchStore.self) private var store
     @State private var hovering = false
@@ -206,10 +217,10 @@ private struct TimelineEventBlock: View {
                     .lineLimit(height > 52 ? 2 : 1)
 
                 if height > 44 {
-                    Text(TimeFormatting.formatTimer(entry.durationSeconds))
+                    Text(TimeFormatting.formatTimer(durationSeconds))
                         .font(.system(size: 11))
                         .monospacedDigit()
-                        .foregroundStyle(NotchColors.textTertiary)
+                        .foregroundStyle(isRunning ? NotchColors.accentGreen : NotchColors.textTertiary)
                 }
 
                 Spacer(minLength: 0)
@@ -225,7 +236,10 @@ private struct TimelineEventBlock: View {
         }
         .frame(height: height, alignment: .top)
         .contentShape(.rect)
-        .onTapGesture { showEditPopover = true }
+        .onTapGesture {
+            guard !isRunning else { return }
+            showEditPopover = true
+        }
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(entry.description)
         .accessibilityHint("Edit entry")
@@ -233,19 +247,31 @@ private struct TimelineEventBlock: View {
             RecentEntryEditPopover(entry: entry, isPresented: $showEditPopover)
         }
         .onChange(of: showEditPopover) { _, isOpen in
+            guard !isRunning else { return }
             store.isEditingRecentEntry = isOpen
         }
         .onHover { hovering = $0 }
         .pointerStyle(.link)
         .contextMenu {
-            Button("Edit") { showEditPopover = true }
-            Button("Continue") { store.continueEntry(entry) }
-            Button("Delete") {
-                store.enqueueMutation { [store] in
-                    try await store.timeEntryRepo.delete(entry)
+            if isRunning {
+                Button("Stop") { store.stopTimer() }
+            } else {
+                Button("Edit") { showEditPopover = true }
+                Button("Continue") { store.continueEntry(entry) }
+                Button("Delete") {
+                    store.enqueueMutation { [store] in
+                        try await store.timeEntryRepo.delete(entry)
+                    }
                 }
             }
         }
+    }
+
+    private var durationSeconds: Int {
+        if isRunning {
+            return max(0, Int(now.timeIntervalSince(entry.startedAt)))
+        }
+        return entry.durationSeconds
     }
 }
 

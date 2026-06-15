@@ -119,13 +119,39 @@ final class TimeEntryRepo {
         } catch {}
     }
 
-    func trackedSeconds(on date: Date) -> Int {
+    func trackedSeconds(on date: Date, at now: Date = .now) -> Int {
         let key = dayKey(date)
-        return (dayCache[key] ?? []).reduce(0) { $0 + $1.durationSeconds }
+        var total = (dayCache[key] ?? []).reduce(0) { $0 + $1.durationSeconds }
+        if let running = runningEntry,
+           Calendar.current.isDate(running.startedAt, inSameDayAs: date),
+           !(dayCache[key]?.contains { $0.id == running.id } ?? false) {
+            total += max(0, Int(now.timeIntervalSince(running.startedAt)))
+        }
+        return total
     }
 
     func cachedEntries(on date: Date) -> [TimeEntry] {
         dayCache[dayKey(date)] ?? []
+    }
+
+    func displayEntries(on date: Date, at now: Date = .now) -> [TimeEntry] {
+        var entries = cachedEntries(on: date)
+        guard let running = runningEntry,
+              Calendar.current.isDate(running.startedAt, inSameDayAs: date),
+              !entries.contains(where: { $0.id == running.id }) else {
+            return entries
+        }
+        let elapsed = max(0, Int(now.timeIntervalSince(running.startedAt)))
+        entries.append(TimeEntry(
+            id: running.id,
+            workspaceID: running.workspaceID,
+            projectID: running.projectID,
+            description: running.description,
+            startedAt: running.startedAt,
+            durationSeconds: elapsed,
+            tagIDs: running.tagIDs
+        ))
+        return entries.sorted { $0.startedAt < $1.startedAt }
     }
 
     // MARK: - Mutations

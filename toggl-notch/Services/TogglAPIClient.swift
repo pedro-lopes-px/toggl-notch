@@ -5,10 +5,25 @@ actor TogglAPIClient {
 
     private let session: URLSession
     private var tokenProvider: @Sendable () -> String?
+    private var connectivityHandler: (@Sendable (Bool) -> Void)?
 
-    init(session: URLSession = .shared, tokenProvider: @escaping @Sendable () -> String? = { KeychainStore.readToken() }) {
-        self.session = session
+    init(
+        session: URLSession? = nil,
+        tokenProvider: @escaping @Sendable () -> String? = { KeychainStore.readToken() }
+    ) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.ephemeral
+            config.waitsForConnectivity = false
+            config.timeoutIntervalForRequest = 30
+            self.session = URLSession(configuration: config)
+        }
         self.tokenProvider = tokenProvider
+    }
+
+    func setConnectivityHandler(_ handler: @escaping @Sendable (Bool) -> Void) {
+        connectivityHandler = handler
     }
 
     func setTokenProvider(_ provider: @escaping @Sendable () -> String?) {
@@ -146,6 +161,8 @@ actor TogglAPIClient {
                 return try await performRequest(method: method, path: path, body: body, token: token)
             } catch let error as TogglAPIError {
                 switch error {
+                case .quotaExceeded:
+                    throw error
                 case .rateLimited where retries429 < 3:
                     let delay = UInt64(pow(2.0, Double(retries429))) * 1_000_000_000
                     retries429 += 1
@@ -187,6 +204,7 @@ actor TogglAPIClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            connectivityHandler?(false)
             throw TogglAPIError.network
         }
 
@@ -196,6 +214,7 @@ actor TogglAPIClient {
 
         switch http.statusCode {
         case 200...299:
+            connectivityHandler?(true)
             if T.self == EmptyResponse.self, data.isEmpty {
                 return EmptyResponse() as! T
             }
@@ -209,6 +228,8 @@ actor TogglAPIClient {
             }
         case 401:
             throw TogglAPIError.unauthenticated
+        case 402:
+            throw TogglAPIError.quotaExceeded(resetsAt: Self.quotaResetDate(from: http))
         case 404:
             throw TogglAPIError.notFound
         case 429:
@@ -223,5 +244,14 @@ actor TogglAPIClient {
             }
             throw TogglAPIError.unknown("HTTP \(http.statusCode)")
         }
+    }
+
+    private static func quotaResetDate(from http: HTTPURLResponse) -> Date {
+        if let raw = http.value(forHTTPHeaderField: "X-Toggl-Quota-Resets-In"),
+           let seconds = Int(raw.trimmingCharacters(in: .whitespaces)),
+           seconds > 0 {
+            return Date().addingTimeInterval(TimeInterval(seconds))
+        }
+        return Date().addingTimeInterval(3600)
     }
 }

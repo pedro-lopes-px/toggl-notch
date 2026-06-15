@@ -11,7 +11,7 @@ struct SettingsView: View {
             tabBar
                 .padding(.horizontal, NotchMetrics.panelPadding)
                 .padding(.top, 8)
-                .padding(.bottom, 4)
+                .padding(.bottom, 10)
 
             paneContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

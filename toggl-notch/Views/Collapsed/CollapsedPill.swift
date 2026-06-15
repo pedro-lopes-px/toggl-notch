@@ -8,6 +8,7 @@ struct CollapsedPill: View {
 
     private var isRunning: Bool { store.runningEntry != nil }
     private var isOnboarding: Bool { store.isOnboarding }
+    private var showsRateLimit: Bool { store.isQuotaLimited && !store.isAuthenticated }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -29,7 +30,14 @@ struct CollapsedPill: View {
 
     private var leftStrip: some View {
         HStack(spacing: NotchMetrics.collapsedStripItemSpacing) {
-            if isOnboarding {
+            if showsRateLimit {
+                Circle()
+                    .fill(NotchColors.textTertiary)
+                    .frame(width: NotchMetrics.statusDotSize, height: NotchMetrics.statusDotSize)
+                Text("Rate limited")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(NotchColors.textSecondary)
+            } else if isOnboarding {
                 Circle()
                     .fill(NotchColors.textTertiary)
                     .frame(width: NotchMetrics.statusDotSize, height: NotchMetrics.statusDotSize)

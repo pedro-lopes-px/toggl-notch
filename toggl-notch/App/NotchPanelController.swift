@@ -10,12 +10,14 @@ final class NotchPanelController: NSObject, NSWindowDelegate {
     private var interactiveRect: CGRect = .zero
     private var lastShellGlobalRect: CGRect = .zero
 
-    private var globalMouseMonitor: Any?
-    private var localMouseMonitor: Any?
-    private var localKeyMonitor: Any?
+    // Event monitor tokens are main-thread-only; nonisolated(unsafe) allows cleanup in deinit.
+    nonisolated(unsafe) private var globalMouseMonitor: Any?
+    nonisolated(unsafe) private var localMouseMonitor: Any?
+    nonisolated(unsafe) private var localKeyMonitor: Any?
 
     private var hoverExpandTask: Task<Void, Never>?
     private var hoverCollapseTask: Task<Void, Never>?
+    private var appearanceObservation: NSKeyValueObservation?
 
     private static let hoverExpandDelay: Duration = .milliseconds(200)
     private static let hoverCollapseDelay: Duration = .milliseconds(350)
@@ -42,6 +44,9 @@ final class NotchPanelController: NSObject, NSWindowDelegate {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        appearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            self?.syncPanelAppearance()
+        }
     }
 
     func show() {
@@ -84,7 +89,6 @@ final class NotchPanelController: NSObject, NSWindowDelegate {
             store.push(route)
         }
         store.expand()
-        NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -99,8 +103,12 @@ final class NotchPanelController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.isMovable = false
         panel.hidesOnDeactivate = false
-        panel.appearance = NSAppearance(named: .darkAqua)
+        syncPanelAppearance()
         panel.delegate = self
+    }
+
+    private func syncPanelAppearance() {
+        panel.appearance = NSApp.effectiveAppearance
     }
 
     private func installHostingView() {
@@ -264,9 +272,9 @@ final class NotchPanelController: NSObject, NSWindowDelegate {
 
     private func handleExpansion(_ expanded: Bool) {
         if expanded {
-            NSApp.activate()
             panel.makeKeyAndOrderFront(nil)
         } else {
+            panel.makeFirstResponder(nil)
             cancelHoverExpand()
             cancelHoverCollapse()
         }
@@ -289,8 +297,25 @@ final class NotchPanelController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        panel.makeFirstResponder(nil)
         if store.isExpanded {
             store.collapse()
+        }
+    }
+
+    deinit {
+        hoverExpandTask?.cancel()
+        hoverCollapseTask?.cancel()
+        appearanceObservation?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+        }
+        if let localKeyMonitor {
+            NSEvent.removeMonitor(localKeyMonitor)
         }
     }
 }

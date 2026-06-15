@@ -5,38 +5,43 @@ struct GeneralSettingsPane: View {
     @State private var showTokenField = false
     @State private var tokenText = ""
     @State private var showWorkspacePopover = false
+    @State private var quitHovering = false
 
     var body: some View {
         @Bindable var store = store
 
         ScrollView {
-            Form {
-                Section("Workspace") {
-                    LabeledContent("Active workspace") {
-                        Button(store.workspaceRepo.activeWorkspace?.name ?? "—") {
-                            showWorkspacePopover = true
+            VStack(alignment: .leading, spacing: NotchMetrics.settingsSectionGap) {
+                SettingsSection("Workspace") {
+                    VStack(alignment: .leading, spacing: NotchMetrics.settingsRowGap) {
+                        SettingsFieldRow("Active workspace") {
+                            Button(store.workspaceRepo.activeWorkspace?.name ?? "—") {
+                                showWorkspacePopover = true
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(NotchColors.textSecondary)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                    }
 
-                    LabeledContent("Account") {
-                        Text(store.workspaceRepo.user?.email ?? "—")
-                            .foregroundStyle(.secondary)
+                        SettingsFieldRow("Account") {
+                            Text(store.workspaceRepo.user?.email ?? "—")
+                                .foregroundStyle(NotchColors.textSecondary)
+                        }
                     }
                 }
 
-                Section("API") {
-                    LabeledContent("Token") {
+                SettingsSection("API") {
+                    SettingsFieldRow("Token") {
                         if showTokenField {
-                            SecureField("Token", text: $tokenText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 220)
-                                .onSubmit(saveToken)
+                            SecureTokenField(
+                                placeholder: "Token",
+                                text: $tokenText,
+                                onSubmit: saveToken
+                            )
+                            .frame(maxWidth: 220)
                         } else {
                             HStack(spacing: 8) {
                                 Text("••••••••")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(NotchColors.textSecondary)
                                 Button("Replace…") { showTokenField = true }
                                     .buttonStyle(.link)
                             }
@@ -44,30 +49,45 @@ struct GeneralSettingsPane: View {
                     }
                 }
 
-                Section("App") {
-                    Picker("Open panel", selection: $store.panelOpenTrigger) {
-                        ForEach(PanelOpenTrigger.allCases) { trigger in
-                            Text(trigger.label).tag(trigger)
+                SettingsSection("App") {
+                    VStack(alignment: .leading, spacing: NotchMetrics.settingsRowGap) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Open panel")
+                                .font(.system(size: 13))
+                                .foregroundStyle(NotchColors.textSecondary)
+
+                            Picker("Open panel", selection: $store.panelOpenTrigger) {
+                                ForEach(PanelOpenTrigger.allCases) { trigger in
+                                    Text(trigger.label).tag(trigger)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
                         }
-                    }
-                    .pickerStyle(.segmented)
 
-                    Toggle("Launch at login", isOn: $store.launchAtLogin)
+                        SettingsToggleRow(label: "Launch at login", isOn: $store.launchAtLogin)
 
-                    Toggle("Show in menu bar", isOn: $store.showMenuBar)
-                }
-
-                Section {
-                    Button("Quit Toggl Notch", role: .destructive) {
-                        NSApp.terminate(nil)
+                        SettingsToggleRow(label: "Show in menu bar", isOn: $store.showMenuBar)
                     }
                 }
+
+                Button("Quit Toggl Notch") {
+                    NSApp.terminate(nil)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(quitHovering ? NotchColors.accentRedDim : NotchColors.textSecondary)
+                .frame(maxWidth: .infinity)
+                .pointerStyle(.link)
+                .onHover { quitHovering = $0 }
+                .animation(.easeOut(duration: 0.12), value: quitHovering)
+                .padding(.top, 4)
             }
-            .formStyle(.grouped)
             .padding(.horizontal, NotchMetrics.panelPadding)
             .padding(.vertical, 12)
         }
         .scrollIndicators(.hidden)
+        .settingsPaneChrome()
         .safeAreaInset(edge: .bottom) {
             Text(appVersion)
                 .font(.caption)
@@ -87,9 +107,15 @@ struct GeneralSettingsPane: View {
 
     private func saveToken() {
         Task {
-            try? await store.connect(token: tokenText)
-            showTokenField = false
-            tokenText = ""
+            do {
+                try await store.connect(token: tokenText)
+                showTokenField = false
+                tokenText = ""
+            } catch let error as TogglAPIError {
+                store.showError(error.userMessage)
+            } catch {
+                store.showError("Couldn't save token")
+            }
         }
     }
 }

@@ -57,6 +57,18 @@ enum NotchMetrics {
     static let sectionGap: CGFloat = 12
     static let rowHeight: CGFloat = 40
 
+    // Settings
+    static let settingsSectionGap: CGFloat = 20
+    static let settingsSectionHeaderGap: CGFloat = 8
+    static let settingsRowGap: CGFloat = 10
+    static let settingsRowMinHeight: CGFloat = 28
+    static let settingsListRowInsets = EdgeInsets(
+        top: 6,
+        leading: panelPadding,
+        bottom: 6,
+        trailing: panelPadding
+    )
+
     // Motion — one spring both ways so the shell never outruns its content.
     static let shellSpring = Animation.spring(duration: 0.28, bounce: 0.04)
     static let reduceMotionShell = Animation.easeOut(duration: 0.14)

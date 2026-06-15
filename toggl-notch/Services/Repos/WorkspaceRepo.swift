@@ -8,6 +8,9 @@ final class WorkspaceRepo {
     private(set) var user: TogglUser?
     private(set) var activeWorkspaceID: Int?
     private(set) var isLoading = false
+    private(set) var quotaResetAt: Date?
+    /// Stays true from the first quota error until bootstrap succeeds again.
+    private(set) var isInQuotaCooldown = false
 
     private let api: TogglAPIClient
 
@@ -29,12 +32,19 @@ final class WorkspaceRepo {
             let fetched = try await api.fetchWorkspaces()
             workspaces = fetched
             if activeWorkspaceID == nil {
-                activeWorkspaceID = me.defaultWorkspaceID
+                activeWorkspaceID = me.defaultWorkspaceID ?? fetched.first?.id
             }
+            quotaResetAt = nil
+            isInQuotaCooldown = false
         } catch TogglAPIError.unauthenticated {
             user = nil
             workspaces = []
             activeWorkspaceID = nil
+            quotaResetAt = nil
+            isInQuotaCooldown = false
+        } catch TogglAPIError.quotaExceeded(let resetsAt) {
+            quotaResetAt = resetsAt
+            isInQuotaCooldown = true
         } catch {
             // Keep cached state on transient errors
         }
@@ -47,12 +57,24 @@ final class WorkspaceRepo {
 
     func validateToken(_ token: String) async throws {
         let tempAPI = TogglAPIClient(tokenProvider: { token })
-        _ = try await tempAPI.fetchMe()
+        do {
+            _ = try await tempAPI.fetchMe()
+            quotaResetAt = nil
+            isInQuotaCooldown = false
+        } catch {
+            if case TogglAPIError.quotaExceeded(let resetsAt) = error {
+                quotaResetAt = resetsAt
+                isInQuotaCooldown = true
+            }
+            throw error
+        }
     }
 
     func clear() {
         user = nil
         workspaces = []
         activeWorkspaceID = nil
+        quotaResetAt = nil
+        isInQuotaCooldown = false
     }
 }

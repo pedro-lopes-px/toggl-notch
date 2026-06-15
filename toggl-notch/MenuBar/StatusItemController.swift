@@ -11,7 +11,7 @@ extension Color {
 final class StatusItemController {
     private let store: NotchStore
     private let statusItem: NSStatusItem
-    private var timer: Timer?
+    private var refreshTask: Task<Void, Never>?
     private var menuDelegate: StatusMenuDelegate?
 
     init(store: NotchStore, panelController: NotchPanelController) {
@@ -20,6 +20,10 @@ final class StatusItemController {
         menuDelegate = StatusMenuDelegate(store: store, panelController: panelController)
         configure()
         startObserving()
+    }
+
+    deinit {
+        refreshTask?.cancel()
     }
 
     private func configure() {
@@ -31,8 +35,9 @@ final class StatusItemController {
     }
 
     private func startObserving() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+        refreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
                 self?.refresh()
             }
         }

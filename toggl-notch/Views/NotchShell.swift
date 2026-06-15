@@ -4,6 +4,7 @@ import SwiftUI
 /// The OS window never resizes — all motion happens here, inside the fixed stage.
 struct NotchShell: View {
     @Environment(NotchStore.self) private var store
+    @Environment(\.notchThemePalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var morph
 
@@ -24,16 +25,11 @@ struct NotchShell: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            surface
+            surface(palette: palette)
             content
         }
         .frame(width: shellWidth, height: shellHeight)
         .clipShape(shape)
-        .overlay {
-            shape
-                .stroke(NotchColors.borderSubtle, lineWidth: 1)
-                .opacity(expanded ? 1 : 0)
-        }
         .animation(shellAnimation, value: expanded)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
@@ -68,37 +64,43 @@ struct NotchShell: View {
 
     /// One surface for both states. At collapsed height the fusion gradient is
     /// entirely solid black; glass is revealed only as the clip grows downward.
-    private var surface: some View {
-        expandedSurface
+    private func surface(palette: NotchThemePalette) -> some View {
+        expandedSurface(palette: palette)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var expandedSurface: some View {
+    private func expandedSurface(palette: NotchThemePalette) -> some View {
         Rectangle()
             .fill(.clear)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { glassMaterial }
+            .background { glassMaterial(palette: palette) }
             .overlay { notchFusionGradient }
             .mask(shape)
             .allowsHitTesting(false)
     }
 
     @ViewBuilder
-    private var glassMaterial: some View {
-        if #available(macOS 26.0, *) {
-            Rectangle()
-                .fill(.clear)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .glassEffect(.regular, in: shape)
-        } else {
-            ZStack {
+    private func glassMaterial(palette: NotchThemePalette) -> some View {
+        ZStack {
+            if #available(macOS 26.0, *) {
+                Rectangle()
+                    .fill(.clear)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .glassEffect(.regular, in: shape)
+            } else {
                 VisualEffectView()
-                NotchColors.surfaceNotch
+            }
+
+            palette.shellTint
+
+            if let atmosphere = palette.shellAtmosphere {
+                ShellAtmosphereLayers(atmosphere: atmosphere)
             }
         }
     }
 
     /// Black band through 74pt, then an ease-out fade to transparent that reveals the glass.
+    /// When the shell is shorter than the solid band, the gradient stays fully opaque black.
     private var notchFusionGradient: some View {
         GeometryReader { geo in
             let height = max(geo.size.height, 1)
@@ -107,22 +109,34 @@ struct NotchShell: View {
                 (NotchMetrics.notchFusionSolidHeight + NotchMetrics.notchFusionFadeHeight) / height,
                 1
             )
-            let fadeSpan = max(fadeEnd - solidStop, 0.001)
 
-            LinearGradient(
-                stops: [
-                    .init(color: NotchColors.physicalNotch, location: 0),
-                    .init(color: NotchColors.physicalNotch, location: solidStop),
-                    .init(color: NotchColors.physicalNotch.opacity(0.72), location: solidStop + fadeSpan * 0.20),
-                    .init(color: NotchColors.physicalNotch.opacity(0.42), location: solidStop + fadeSpan * 0.45),
-                    .init(color: NotchColors.physicalNotch.opacity(0.16), location: solidStop + fadeSpan * 0.70),
-                    .init(color: NotchColors.physicalNotch.opacity(0.04), location: solidStop + fadeSpan * 0.90),
-                    .init(color: .clear, location: fadeEnd),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
+            if fadeEnd <= solidStop {
+                LinearGradient(
+                    stops: [
+                        .init(color: NotchColors.physicalNotch, location: 0),
+                        .init(color: NotchColors.physicalNotch, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            } else {
+                let fadeSpan = fadeEnd - solidStop
+
+                LinearGradient(
+                    stops: [
+                        .init(color: NotchColors.physicalNotch, location: 0),
+                        .init(color: NotchColors.physicalNotch, location: solidStop),
+                        .init(color: NotchColors.physicalNotch.opacity(0.72), location: solidStop + fadeSpan * 0.20),
+                        .init(color: NotchColors.physicalNotch.opacity(0.42), location: solidStop + fadeSpan * 0.45),
+                        .init(color: NotchColors.physicalNotch.opacity(0.16), location: solidStop + fadeSpan * 0.70),
+                        .init(color: NotchColors.physicalNotch.opacity(0.04), location: solidStop + fadeSpan * 0.90),
+                        .init(color: .clear, location: fadeEnd),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
         }
         .allowsHitTesting(false)
     }

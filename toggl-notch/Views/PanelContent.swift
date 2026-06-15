@@ -8,6 +8,13 @@ struct PanelContent: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
+                if store.isQuotaLimited, let resetsAt = store.quotaResetAt {
+                    QuotaLimitBanner(resetsAt: resetsAt)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 4)
+                }
+
                 routeContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.bottom, 41) // NavBar height + divider
@@ -30,12 +37,17 @@ struct PanelContent: View {
             }
         }
         .animation(reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.2), value: store.errorToast?.id)
+        .animation(reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.2), value: store.isQuotaLimited)
     }
 
     @ViewBuilder
     private var routeContent: some View {
         if store.isOnboarding {
-            OnboardingView()
+            if store.hasStoredToken {
+                SessionRecoveryView()
+            } else {
+                OnboardingView()
+            }
         } else {
             ZStack {
                 routeView(for: store.route)

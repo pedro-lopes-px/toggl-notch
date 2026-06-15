@@ -19,9 +19,11 @@ struct ProjectsSettingsPane: View {
                 List {
                     ForEach(store.projects) { project in
                         ProjectSettingsRow(project: project)
+                            .settingsListRowChrome()
                     }
                 }
-                .listStyle(.inset)
+                .listStyle(.plain)
+                .settingsPaneChrome()
             }
 
             createBar
@@ -39,8 +41,8 @@ struct ProjectsSettingsPane: View {
                 .pointerStyle(.link)
         }
         .padding(.horizontal, NotchMetrics.panelPadding)
-        .padding(.top, 4)
-        .padding(.bottom, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
     }
 
     @ViewBuilder
@@ -116,7 +118,7 @@ struct ProjectSettingsRow: View {
             .menuStyle(.borderlessButton)
             .frame(width: 24)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     private var hoursLabel: String {
