@@ -12,21 +12,22 @@ struct CircularIconButton: View {
     @State private var hovering = false
 
     var body: some View {
-        Button(action: action) {
-            ZStack {
-                Circle()
-                    .fill(hovering ? NotchColors.surfaceHover : NotchColors.surfaceRaised)
-                Image(systemName: systemName)
-                    .font(.system(size: iconSize, weight: .semibold))
-                    .foregroundStyle(hovering ? hoverTint : NotchColors.textSecondary)
+        Button(label, systemImage: systemName, action: action)
+            .labelStyle(.iconOnly)
+            .buttonStyle(PressableButtonStyle())
+            .pointerStyle(.link)
+            .background {
+                ZStack {
+                    Circle()
+                        .fill(hovering ? NotchColors.surfaceHover : NotchColors.surfaceRaised)
+                }
+                .frame(width: diameter, height: diameter)
             }
+            .font(.system(size: iconSize, weight: .semibold))
+            .foregroundStyle(hovering ? hoverTint : NotchColors.textSecondary)
             .frame(width: diameter, height: diameter)
-        }
-        .buttonStyle(PressableButtonStyle())
-        .pointerStyle(.link)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.15), value: hovering)
-        .accessibilityLabel(label)
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 

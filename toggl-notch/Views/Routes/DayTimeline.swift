@@ -226,6 +226,9 @@ private struct TimelineEventBlock: View {
         .frame(height: height, alignment: .top)
         .contentShape(.rect)
         .onTapGesture { showEditPopover = true }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(entry.description)
+        .accessibilityHint("Edit entry")
         .popover(isPresented: $showEditPopover, arrowEdge: .top) {
             RecentEntryEditPopover(entry: entry, isPresented: $showEditPopover)
         }

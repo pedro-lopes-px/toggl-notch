@@ -2,12 +2,6 @@ import Foundation
 import Network
 import Observation
 
-struct ErrorToast: Identifiable {
-    let id = UUID()
-    var message: String
-    var retryAction: (() -> Void)?
-}
-
 /// Single source of truth for all UI state, routing, and Toggl data.
 @MainActor
 @Observable
@@ -33,7 +27,9 @@ final class NotchStore {
     var errorToast: ErrorToast?
     var isOffline = false
     var showMenuBar = true
-    var launchAtLogin = false
+    var launchAtLogin = false {
+        didSet { syncLaunchAtLogin() }
+    }
     var panelOpenTrigger: PanelOpenTrigger {
         didSet { UserDefaults.standard.set(panelOpenTrigger.rawValue, forKey: Self.panelOpenTriggerKey) }
     }

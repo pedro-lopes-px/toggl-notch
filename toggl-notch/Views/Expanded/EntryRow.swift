@@ -32,19 +32,17 @@ struct EntryRow: View {
                 .monospacedDigit()
                 .foregroundStyle(NotchColors.textSecondary)
 
-            Button {
+            Button("Edit entry", systemImage: "pencil") {
                 showEditPopover = true
-            } label: {
-                Image(systemName: "pencil")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(editHovering ? NotchColors.textPrimary : NotchColors.textTertiary)
-                    .frame(width: 24, height: 24)
             }
+            .labelStyle(.iconOnly)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(editHovering ? NotchColors.textPrimary : NotchColors.textTertiary)
             .buttonStyle(.plain)
+            .frame(width: 24, height: 24)
             .opacity(hovering ? 1 : 0)
             .animation(.easeOut(duration: 0.12), value: hovering)
             .onHover { editHovering = $0 }
-            .accessibilityLabel("Edit entry")
             .popover(isPresented: $showEditPopover, arrowEdge: .top) {
                 RecentEntryEditPopover(entry: entry, isPresented: $showEditPopover)
             }
@@ -52,19 +50,17 @@ struct EntryRow: View {
                 store.isEditingRecentEntry = isOpen
             }
 
-            Button {
+            Button("Continue entry", systemImage: "play.fill") {
                 store.continueEntry(entry)
-            } label: {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(playHovering ? NotchColors.accentGreen : NotchColors.textTertiary)
-                    .frame(width: 24, height: 24)
             }
+            .labelStyle(.iconOnly)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(playHovering ? NotchColors.accentGreen : NotchColors.textTertiary)
             .buttonStyle(.plain)
+            .frame(width: 24, height: 24)
             .opacity(hovering ? 1 : 0)
             .animation(.easeOut(duration: 0.12), value: hovering)
             .onHover { playHovering = $0 }
-            .accessibilityLabel("Continue entry")
         }
         .padding(.horizontal, 8)
         .frame(height: NotchMetrics.rowHeight)
@@ -72,6 +68,8 @@ struct EntryRow: View {
         .background(hovering ? NotchColors.surfaceHover : .clear, in: .rect(cornerRadius: 8))
         .contentShape(.rect)
         .onTapGesture { showEditPopover = true }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Edit entry")
         .onHover { hovering = $0 }
         .pointerStyle(.link)
         .animation(.easeOut(duration: 0.15), value: hovering)

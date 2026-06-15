@@ -88,10 +88,14 @@ private struct CollapsedOpenGesture: ViewModifier {
 
     func body(content: Content) -> some View {
         if store.panelOpenTrigger == .click {
-            content
-                .contentShape(.rect)
-                .onTapGesture { store.expand() }
-                .pointerStyle(.link)
+            Button {
+                store.expand()
+            } label: {
+                content
+            }
+            .buttonStyle(.plain)
+            .pointerStyle(.link)
+            .accessibilityLabel("Expand panel")
         } else {
             content
         }

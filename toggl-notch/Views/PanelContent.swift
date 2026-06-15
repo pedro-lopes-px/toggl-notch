@@ -21,7 +21,10 @@ struct PanelContent: View {
                         onRetry: toast.retryAction
                     )
                     .padding(.bottom, 4)
+                    .contentShape(.rect)
                     .onTapGesture { store.dismissError() }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Dismiss error")
                 }
                 NavBar()
             }
@@ -79,58 +82,5 @@ struct PanelContent: View {
 
     private var routeAnimation: Animation {
         reduceMotion ? .easeOut(duration: 0.12) : .easeOut(duration: 0.18)
-    }
-}
-
-struct HomeRouteView: View {
-    @Environment(NotchStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var expanded: Bool { store.isExpanded }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: NotchMetrics.sectionGap) {
-            PanelHeader()
-                .padding(.top, 8)
-
-            panelBody(index: 1) {
-                divider
-                if store.isLoadingHome {
-                    VStack(spacing: 2) {
-                        ForEach(0..<3, id: \.self) { _ in SkeletonRow() }
-                    }
-                } else {
-                    TodaySummary()
-                }
-            }
-
-            panelBody(index: 2) { divider }
-
-            panelBody(index: 3) {
-                VStack(alignment: .leading, spacing: 6) {
-                    SectionLabel("Recent")
-                    RecentEntries()
-                }
-            }
-        }
-        .padding(NotchMetrics.panelPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(NotchColors.borderSubtle)
-            .frame(height: 1)
-    }
-
-    @ViewBuilder
-    private func panelBody(index: Int, @ViewBuilder content: () -> some View) -> some View {
-        content()
-            .opacity(expanded ? 1 : 0)
-            .offset(y: expanded ? 0 : 6)
-            .animation(
-                NotchMetrics.sectionRevealAnimation(index: index, expanded: expanded, reduceMotion: reduceMotion),
-                value: expanded
-            )
     }
 }
